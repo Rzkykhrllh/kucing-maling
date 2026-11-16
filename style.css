@@ -47,6 +47,11 @@ h2 { margin: 0 0 8px; color: var(--accent); }
 .overlay.hidden { display: none; }
 .panel { background: var(--panel); border: 3px solid var(--line); padding: 22px 30px; border-radius: 6px; min-width: 280px; }
 .controls { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+.voice { color: var(--muted); font-size: 13px; margin-top: 14px; display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.voice input { accent-color: var(--accent); width: 16px; height: 16px; }
+.hud select { font: inherit; color: var(--ink); background: var(--panel); border: 2px solid var(--line); border-radius: 4px; padding: 3px 6px; }
+.panel .best { color: #ffe08a; margin: 0; }
+.panel .actions { margin-top: 16px; justify-content: center; }
 
 .touch { display: none; width: 100%; justify-content: space-between; margin-top: 12px; user-select: none; -webkit-user-select: none; }
 .touch button { font-size: 26px; width: 76px; height: 64px; margin-right: 8px; touch-action: none; }

@@ -39,6 +39,7 @@
       </div>
       <button id="btnLocal" class="ghost">Main lokal (1 keyboard)</button>
     </div>
+    <label class="voice"><input type="checkbox" id="useMic" checked /> Pakai voice chat (disarankan: izin mic juga bikin koneksi lebih gampang nyambung)</label>
     <p id="lobbyErr" class="err"></p>
   </section>
 
@@ -57,9 +58,9 @@
   <!-- GAME -->
   <section id="game" class="screen">
     <header class="hud">
-      <span id="hudLevel"></span>
+      <select id="lvlSelect" aria-label="Pilih level"></select>
       <span id="hudTime">00:00</span>
-      <span id="hudDeaths">kecebur: 0</span>
+      <span id="hudDeaths">oops: 0</span>
       <span id="hudRoom"></span>
       <span class="spacer"></span>
       <button id="btnMic" class="small">Mic: mati</button>
@@ -70,9 +71,13 @@
       <canvas id="cv"></canvas>
       <div id="winBox" class="overlay hidden">
         <div class="panel">
-          <h2>Ikan berhasil dicuri!</h2>
+          <h2 id="winTitle">Ikan berhasil dicuri!</h2>
           <p id="winStats"></p>
-          <button id="btnAgain" class="primary">Main lagi</button>
+          <p id="winBest" class="best"></p>
+          <div class="actions row">
+            <button id="btnAgain">Main lagi</button>
+            <button id="btnNext" class="primary">Level berikutnya</button>
+          </div>
         </div>
       </div>
       <div id="msgBox" class="overlay hidden">

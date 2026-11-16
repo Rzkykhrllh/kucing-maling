@@ -63,23 +63,38 @@ function currentInputs() {
 }
 
 // ---------------- game loop ----------------
-function startGame(m) {
-  mode = m;
-  const level = LEVELS[0];
-  sim = new Sim(level);
+let levelIndex = 0;
+
+// Bikin ulang simulasi + renderer buat level tertentu
+function loadLevel(lv) {
+  levelIndex = Math.max(0, Math.min(LEVELS.length - 1, lv | 0));
+  const level = LEVELS[levelIndex];
+  sim = new Sim(level, levelIndex);
   renderer = new Renderer($('cv'), sim);
   renderer.me = mode === 'local' ? -1 : myCat;
-  $('hudLevel').textContent = `Level 1: ${level.name}`;
+  $('lvlSelect').value = String(levelIndex);
+  $('winBox').classList.add('hidden');
+  wasWon = false;
+  acc = 0;
+}
+
+// Pindah level: host/lokal langsung, guest minta ke host
+function goLevel(lv) {
+  if (mode === 'guest') net.send({ t: 'goto', lv });
+  else loadLevel(lv);
+}
+
+function startGame(m, lv = 0) {
+  mode = m;
+  loadLevel(lv);
   $('hudRoom').textContent = mode === 'local' ? 'lokal' : `room ${net.code}`;
   $('btnMic').style.display = mode === 'local' ? 'none' : '';
   $('btnMic').textContent = net?.mic ? 'Mic: nyala' : 'Mic: mati';
   $('controlsHelp').textContent = mode === 'local'
     ? 'Gembul: A / D jalan, W lompat  ·  Mochi: ← / → jalan, ↑ lompat  ·  R ulang'
     : `Kamu ${CATS[myCat].name}: ← → / A D jalan, ↑ / W / Spasi lompat  ·  R ulang  ·  Nyalain mic biar bisa ngobrol`;
-  $('winBox').classList.add('hidden');
   $('msgBox').classList.add('hidden');
   remoteInput = { l: false, r: false, j: false };
-  wasWon = false;
   show('game');
   running = true;
   lastFrame = lastSim = performance.now();
@@ -128,13 +143,28 @@ const fmt = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math
 function updateHud() {
   const s = sim.s;
   $('hudTime').textContent = fmt(s.won ? s.wonAt : s.t);
-  $('hudDeaths').textContent = `kecebur: ${s.deaths}`;
+  $('hudDeaths').textContent = `oops: ${s.deaths}`;
   if (mode === 'guest' && pingMs != null) $('hudRoom').textContent = `room ${net.code} · ${pingMs} ms`;
   if (s.won && !wasWon) {
-    $('winStats').textContent = `Waktu ${fmt(s.wonAt)} · kecebur ${s.deaths}x${s.deaths === 0 ? ' (kompak banget!)' : ''}`;
+    const best = saveBest(levelIndex, s.wonAt);
+    const last = levelIndex === LEVELS.length - 1;
+    $('winTitle').textContent = last ? 'Tamat! Semua ikan udah dicolong' : 'Ikan berhasil dicuri!';
+    $('winStats').textContent = `Waktu ${fmt(s.wonAt)} · oops ${s.deaths}x${s.deaths === 0 ? ' (kompak banget!)' : ''}`;
+    $('winBest').textContent = best.isNew ? 'Rekor baru!' : `Rekor kalian: ${fmt(best.time)}`;
+    $('btnNext').style.display = last ? 'none' : '';
     $('winBox').classList.remove('hidden');
   } else if (!s.won && wasWon) $('winBox').classList.add('hidden');
   wasWon = s.won;
+}
+
+// Rekor waktu terbaik per level (disimpan di browser masing-masing)
+function saveBest(lv, time) {
+  const key = `kucingmaling-best-${lv}`;
+  let prev = null;
+  try { prev = parseFloat(localStorage.getItem(key)); } catch { /* storage diblok */ }
+  const isNew = !(prev > 0) || time < prev;
+  if (isNew) try { localStorage.setItem(key, String(time)); } catch { /* abaikan */ }
+  return { isNew, time: isNew ? time : prev };
 }
 
 function restart() {
@@ -155,13 +185,25 @@ function setupNet() {
   return net;
 }
 
+// Minta izin mic SEBELUM konek. Selain buat voice chat, izin mic bikin Chrome pakai IP lokal asli
+// (bukan nama *.local), jadi dua device di WiFi yang sama bisa saling nemu.
+let micNote = '';
+async function prepareMic() {
+  micNote = '';
+  if (!$('useMic').checked) { micNote = ' Tips: centang "Pakai voice chat" lalu izinkan mic, koneksi biasanya lebih gampang nyambung.'; return; }
+  try { await net.toggleMic(); }
+  catch { micNote = ' (Mic nggak diizinkan. Kalau gagal konek, coba izinkan mic di pengaturan situs browser.)'; }
+}
+
 async function hostRoom() {
   setLobbyBusy(true);
   myCat = pickedCat;
   setupNet();
+  await prepareMic();
   net.on('connected', () => startGame('host'));
   // guest bilang "aku udah siap" → host kasih tahu dia jadi kucing yang mana
-  net.on('join', () => net.send({ t: 'hello', yourCat: 1 - myCat }));
+  net.on('join', () => net.send({ t: 'hello', yourCat: 1 - myCat, lv: levelIndex }));
+  net.on('goto', (m) => loadLevel(m.lv));
   net.on('in', (m) => { remoteInput = { l: !!m.l, r: !!m.r, j: !!m.j }; });
   net.on('restart', () => { sim?.reset(); acc = 0; });
   net.on('ping', (m) => net.send({ t: 'pong', ts: m.ts }));
@@ -169,8 +211,10 @@ async function hostRoom() {
     const code = await net.host();
     $('roomCode').textContent = code;
     show('waiting');
+    $('lobbyErr').textContent = '';
   } catch (e) {
     $('lobbyErr').textContent = e.message;
+    net?.close(); net = null;
   }
   setLobbyBusy(false);
 }
@@ -180,8 +224,13 @@ async function joinRoom(code) {
   setLobbyBusy(true);
   $('lobbyErr').textContent = 'Nyambungin…';
   setupNet();
-  net.on('hello', (m) => { myCat = m.yourCat; startGame('guest'); });
-  net.on('st', (m) => sim?.applySnapshot(m));
+  await prepareMic();
+  net.on('hello', (m) => { myCat = m.yourCat; startGame('guest', m.lv || 0); });
+  net.on('st', (m) => {
+    if (!sim) return;
+    if (m.lv !== levelIndex) loadLevel(m.lv); // host pindah level
+    sim.applySnapshot(m);
+  });
   net.on('full', () => { net.close(); show('lobby'); $('lobbyErr').textContent = 'Room-nya udah penuh (2 orang).'; });
   net.on('pong', (m) => { pingMs = Math.round(performance.now() - m.ts); });
   try {
@@ -191,7 +240,8 @@ async function joinRoom(code) {
     clearInterval(pingTimer);
     pingTimer = setInterval(() => net?.connected && net.send({ t: 'ping', ts: performance.now() }), 2000);
   } catch (e) {
-    $('lobbyErr').textContent = e.message;
+    $('lobbyErr').textContent = e.message + micNote;
+    net?.close(); net = null;
   }
   setLobbyBusy(false);
 }
@@ -222,6 +272,9 @@ $('btnLeave').onclick = leave;
 $('msgBtn').onclick = leave;
 $('btnRestart').onclick = restart;
 $('btnAgain').onclick = restart;
+$('btnNext').onclick = () => goLevel(levelIndex + 1);
+LEVELS.forEach((l, i) => $('lvlSelect').add(new Option(`Level ${i + 1}: ${l.name}`, String(i))));
+$('lvlSelect').onchange = (e) => { goLevel(+e.target.value); e.target.blur(); };
 $('btnCopyLink').onclick = async () => {
   const url = `${location.origin}${location.pathname}?room=${net.code}`;
   try { await navigator.clipboard.writeText(url); $('btnCopyLink').textContent = 'Link disalin!'; }
@@ -242,12 +295,13 @@ if (roomParam) { $('joinCode').value = roomParam.toUpperCase().slice(0, 4); $('j
 
 // Gambar kucing kecil di kartu pilihan lobby
 const previewT0 = performance.now();
+const previewR = Object.assign(Object.create(Renderer.prototype), { me: -2 }); // "renderer" mini tanpa canvas
 function drawPreviews(now) {
   document.querySelectorAll('canvas[data-preview]').forEach((cv) => {
     const i = +cv.dataset.preview, def = CATS[i], g = cv.getContext('2d');
     g.clearRect(0, 0, cv.width, cv.height);
     const fake = { x: cv.width / 2 - def.w / 2, y: cv.height - 6 - def.h, w: def.w, h: def.h, vx: 0, ground: true, walk: 0, face: 1 };
-    Renderer.prototype.drawCat.call({ me: -2 }, g, i, fake, (now - previewT0) / 1000);
+    Renderer.prototype.drawCat.call(previewR, g, i, fake, (now - previewT0) / 1000);
   });
   if (document.getElementById('lobby').classList.contains('active')) requestAnimationFrame(drawPreviews);
   else setTimeout(() => requestAnimationFrame(drawPreviews), 500);

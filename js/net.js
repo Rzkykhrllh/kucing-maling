@@ -2,6 +2,12 @@
 //  1. Host daftar ke server "makelar" gratis PeerJS dengan ID  kucingmaling-v1-<KODE>
 //  2. Guest konek ke ID itu  → setelah kenalan, data jalan langsung browser↔browser (WebRTC)
 //  3. Voice chat juga lewat WebRTC (masing-masing "nelpon" pasangannya pakai mic sendiri)
+//
+// PENTING: tanpa izin mikrofon, Chrome nyembunyiin IP lokal (diganti nama mDNS *.local).
+// Di sebagian jaringan nama itu nggak bisa di-resolve → dua device di WiFi yang sama gagal konek.
+// Makanya izin mic diminta SEBELUM bikin/gabung room (lihat main.js).
+import { TURN_SERVERS } from './config.js';
+
 const PREFIX = 'kucingmaling-v1-';
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // tanpa O/0, I/1/L biar nggak ketuker
 const PEER_OPTS = {
@@ -11,6 +17,7 @@ const PEER_OPTS = {
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:global.stun.twilio.com:3478' },
+      ...TURN_SERVERS,
     ],
   },
 };

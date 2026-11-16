@@ -4,7 +4,13 @@ Game puzzle co-op online buat berdua. Gembul (kucing gede) dan Mochi (kucing kec
 
 - **Gembul**: bisa nekan tombol berat dan dorong kardus, tapi lompatnya pendek dan nggak muat lewat celah sempit.
 - **Mochi**: muat lewat celah sempit dan lompatnya tinggi, tapi terlalu ringan buat tombol berat.
-- Level selesai kalau dua-duanya sampai ke ikan.
+- Level selesai kalau dua-duanya sampai ke ikan. Rekor waktu tiap level disimpan di browser.
+
+## Level
+
+1. **Ikan di Meja Makan**: jembatan di atas air, tombol berat, tuas, dan kardus buat naik meja.
+2. **Robot Vacuum**: robot vacuum patroli (kesenggol = balik ke checkpoint), lift yang cuma naik selama tombolnya ditahan, dan pagar yang dibuka dari dua sisi.
+3. **Mati Lampu**: ruangan gelap. Di mode online kamu cuma lihat sekitar kucingmu sendiri, sedangkan pasanganmu cuma kelihatan matanya. Nyalain lampu biar lubang air sama robotnya kelihatan.
 
 ## Main
 
@@ -39,7 +45,7 @@ js/sim.js        fisika + aturan game (murni logika, bisa dites di Node)
 js/render.js     gambar pixel art ke <canvas> (tanpa file gambar)
 js/net.js        P2P pakai PeerJS + voice chat
 js/main.js       alur lobby → game, loop, input
-test/            bot yang nyelesaiin level 1 + cek batasan puzzle
+test/            bot yang nyelesaiin tiap level + cek batasan puzzle
 ```
 
 **Online (host-authoritative P2P):**
@@ -48,14 +54,18 @@ test/            bot yang nyelesaiin level 1 + cek batasan puzzle
 - Cuma **host** yang menjalankan simulasi (60x per detik) dan ngirim snapshot ke guest (30x per detik, sekitar 100 byte).
 - **Guest** cuma ngirim input (kiri/kanan/lompat) dan nampilin snapshot dengan posisi yang dihaluskan.
 
+**Kenapa izin mic diminta sebelum konek?** Kalau situs belum dapet izin mikrofon, Chrome nyembunyiin IP lokal dan gantinya pakai nama mDNS (`*.local`). Di sebagian jaringan nama itu nggak bisa di-resolve, jadi dua device di WiFi yang sama gagal saling nemu. Begitu izin mic dikasih, Chrome pakai IP asli dan koneksinya nyambung. Kalau mic nggak diizinkan dan tetap gagal, isi server TURN di `js/config.js`.
+
 Keterbatasannya: belum ada server TURN, jadi di jaringan yang ketat (WiFi kantor, sebagian jaringan seluler) koneksi bisa gagal. Guest juga belum pakai client-side prediction, jadi kalau ping-nya tinggi kucing guest bakal kerasa sedikit telat.
 
 ## Bikin level baru
 
-Edit `map` di `js/level.js`. Legenda tile ada di bagian atas file itu. Abis itu jalanin tes:
+Tambahin objek baru ke `LEVELS` di `js/level.js`. Legenda tile (tombol, tuas, pagar, lift, robot, lampu, checkpoint) ada di bagian atas file itu. Lewat `links` kamu bisa ngatur tombol mana yang ngaktifin apa, misalnya `{ P0: ['c', 'e'], D: ['b', 'a'] }`. Kalau mau ruangannya gelap, tambahin `dark: true`.
+
+Abis itu jalanin tes:
 
 ```bash
-node test/solve.test.mjs
+npm test
 ```
 
-Tes ini ngecek level 1 bisa diselesaikan, dan memastikan puzzle-nya nggak bisa diakalin (misalnya Gembul nggak muat masuk kolong sofa, atau nggak bisa naik meja tanpa kardus).
+Bot di folder `test/` nyelesaiin tiap level (lompatin robot dan lubang air, naik lift, dorong kardus) dan ngecek puzzle-nya nggak bisa diakalin. Contohnya: Gembul nggak muat masuk kolong sofa, Mochi nggak bisa naik lantai atas tanpa lift, dan Gembul nggak bisa naik rak lampu.

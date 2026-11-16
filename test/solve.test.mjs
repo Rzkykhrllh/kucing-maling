@@ -34,9 +34,9 @@ console.log('Skenario utama (solusi):');
   const sim = new Sim(lvl);
   const [G, M] = sim.s.cats;
   check(goTo(sim, 1, tileCx(9)), 'Mochi masuk kolong sofa ke tombol A');
-  check(sim.s.A && sim.s.bridge, 'tombol A ketekan, jembatan muncul');
+  check(sim.s.on.a && sim.active('~'), 'tombol A ketekan, jembatan muncul');
   check(goTo(sim, 0, tileCx(21)), 'Gembul naik sofa, nyebrang jembatan, ke tombol berat');
-  check(sim.s.B, 'tombol berat ketekan sama Gembul');
+  check(sim.s.on.b, 'tombol berat ketekan sama Gembul');
   check(goTo(sim, 1, tileCx(5), { jumpIfStuck: false }), 'Mochi keluar kolong sofa (lewat kiri)');
   for (let f = 0; f < 50; f++) sim.step(DT, [idle, { l: false, r: f > 4, j: f < 30 }]); // lompat ke atas sofa
   check(M.y + M.h <= 13 * TILE + 0.5, 'Mochi di atas sofa');
@@ -44,7 +44,7 @@ console.log('Skenario utama (solusi):');
   check(sim.s.deaths === 0, 'belum ada yang kecebur');
   // Mochi lompat ke rak (tahan kiri + lompat)
   for (let f = 0; f < 60; f++) sim.step(DT, [idle, { l: M.y + M.h < 11 * TILE, r: false, j: f < 40 }]);
-  check(sim.s.lever && sim.s.gate, 'Mochi nyampe rak, tuas nyala, pagar kebuka');
+  check(sim.s.on.L && sim.active('D'), 'Mochi nyampe rak, tuas nyala, pagar kebuka');
   check(goTo(sim, 0, tileCx(26)), 'Gembul lewat pagar (jembatan boleh hilang sekarang)');
   // Gembul dorong kardus sampai mepet meja
   for (let f = 0; f < 600 && sim.s.box.x < 30 * TILE - 1; f++) sim.step(DT, [{ l: false, r: true, j: false }, idle]);
@@ -79,7 +79,7 @@ console.log('Batasan (biar puzzle-nya nggak bisa diakalin):');
   const G = sim.s.cats[0];
   goTo(sim, 0, tileCx(24), { jumpIfStuck: false });
   for (let f = 0; f < 90; f++) sim.step(DT, [{ l: f > 2, r: false, j: f < 40 }, idle]);
-  check(!sim.s.lever, 'Gembul NGGAK bisa lompat ke rak tuas');
+  check(!sim.s.on.L, 'Gembul NGGAK bisa lompat ke rak tuas');
   check(G.y + G.h > 11 * TILE + 1, 'Gembul tetap di lantai');
 }
 {
@@ -96,7 +96,7 @@ console.log('Batasan (biar puzzle-nya nggak bisa diakalin):');
 {
   // Gembul nggak bisa naik meja tanpa kardus
   const sim = new Sim(lvl);
-  sim.s.gate = sim.s.lever = true;
+  sim.s.on.L = true;
   const G = sim.s.cats[0];
   Object.assign(G, { x: tileCx(29) - G.w / 2, y: 15 * TILE - G.h });
   sim.s.box.x = 26 * TILE; // kardus jauh
@@ -112,7 +112,7 @@ console.log('Snapshot (host → guest):');
   const bytes = JSON.stringify(snap).length;
   guest.applySnapshot(JSON.parse(JSON.stringify(snap)));
   for (let f = 0; f < 60; f++) guest.smooth(DT);
-  check(Math.abs(guest.s.cats[1].x - host.s.cats[1].x) < 0.5 && guest.s.bridge, `guest ikut posisi & status host (${bytes} byte/snapshot)`);
+  check(Math.abs(guest.s.cats[1].x - host.s.cats[1].x) < 0.5 && guest.active('~'), `guest ikut posisi & status host (${bytes} byte/snapshot)`);
 }
 
 console.log(fails ? `\n${fails} gagal` : '\nSemua lulus');

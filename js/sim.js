@@ -12,32 +12,63 @@ const MAX_FALL = 900;
 const COYOTE = 0.09; // boleh lompat sesaat setelah jatuh dari pinggiran
 const JUMP_BUF = 0.12; // tombol lompat ditekan sedikit sebelum mendarat tetap kehitung
 const PUSH_SLOW = 0.6;
+const LIFT_SPEED = 95;
+const ROBOT_SPEED = 80;
+const ROBOT_W = 38, ROBOT_H = 14;
+
 const SOLID = new Set(['#', 'S', 'E', 'T']);
+const BUTTONS = new Set(['a', 'c', 'e', 'g']); // tombol biasa (siapa aja)
+const HEAVY = new Set(['b', 'h']); // tombol berat (Gembul / kardus)
+const LEVERS = new Set(['L', 'M']); // tuas, sekali sentuh nyala terus
+const GATES = new Set(['D', 'F']);
+const DEFAULT_LINKS = { '~': ['a', 'b'], D: ['L'] };
 
 const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 export class Sim {
-  constructor(level) {
+  constructor(level, index = 0) {
     this.level = level;
+    this.index = index;
+    this.links = { ...DEFAULT_LINKS, ...(level.links || {}) };
     this.map = level.map.map((r) => r.split(''));
     this.H = this.map.length;
     this.W = this.map[0].length;
     this.spawns = [];
-    this.btnA = [];
-    this.btnB = [];
-    this.levers = [];
+    this.sensors = []; // tombol: {id, heavy, x,y,w,h, tx,ty}
+    this.levers = []; // {id, ...rect}
+    this.checkpoints = [];
+    this.lampDefs = [];
+    this.robotDefs = [];
+    this.liftDefs = [];
+    this.boxSpawn = null;
     this.goal = null;
+    const triggerIds = new Set();
+
     for (let ty = 0; ty < this.H; ty++) {
       for (let tx = 0; tx < this.W; tx++) {
         const c = this.map[ty][tx];
         const px = tx * TILE, py = ty * TILE;
-        const sensor = { x: px + 4, y: py + TILE - 10, w: TILE - 8, h: 10, tx, ty };
         if (c === '1' || c === '2') this.spawns[+c - 1] = { x: px + TILE / 2, y: py + TILE };
         else if (c === 'K') this.boxSpawn = { x: px, y: py };
-        else if (c === 'a') this.btnA.push(sensor);
-        else if (c === 'b') this.btnB.push(sensor);
-        else if (c === 'L') this.levers.push({ x: px + 6, y: py + 4, w: TILE - 12, h: TILE - 4, tx, ty });
-        else if (c === 'G') {
+        else if (BUTTONS.has(c) || HEAVY.has(c)) {
+          this.sensors.push({ id: c, heavy: HEAVY.has(c), x: px + 4, y: py + TILE - 10, w: TILE - 8, h: 10, tx, ty });
+          triggerIds.add(c);
+        } else if (LEVERS.has(c)) {
+          this.levers.push({ id: c, x: px + 6, y: py + 4, w: TILE - 12, h: TILE - 4, tx, ty });
+          triggerIds.add(c);
+        } else if (c === 'C') this.checkpoints.push({ x: px, y: py, w: TILE, h: TILE, tx, ty });
+        else if (c === 'Y') this.lampDefs.push({ x: px + TILE / 2, y: py + TILE / 2, tx, ty, ...(level.lamps?.[this.lampDefs.length] || {}) });
+        else if (c === 'R') {
+          const cfg = level.robots?.[this.robotDefs.length] || {};
+          this.robotDefs.push({ x: px, y: py + TILE - ROBOT_H, minX: (cfg.from ?? tx) * TILE, maxX: ((cfg.to ?? tx) + 1) * TILE, dock: (cfg.dock ?? tx) * TILE });
+        } else if (c === 'P') {
+          const prev = this.liftDefs[this.liftDefs.length - 1];
+          if (prev && prev.ty === ty && prev.x + prev.w === px) prev.w += TILE; // lanjutan lift yang sama
+          else {
+            const cfg = level.lifts?.[this.liftDefs.length] || {};
+            this.liftDefs.push({ x: px, y: py + TILE - 12, w: TILE, h: 12, ty, restY: py + TILE - 12, topY: (cfg.toRow ?? ty) * TILE });
+          }
+        } else if (c === 'G') {
           const r = { x: px, y: py, w: TILE, h: TILE };
           if (!this.goal) this.goal = r;
           else {
@@ -49,21 +80,30 @@ export class Sim {
         this.map[ty][tx] = '.';
       }
     }
+    this.triggerIds = [...triggerIds].sort();
     this.reset();
   }
 
   reset() {
-    const keepId = this.s ? this.s.splashId : 0; // id cipratan jangan mulai dari 0 lagi
+    const keepId = this.s ? this.s.fxId : 0; // id efek jangan mulai dari 0 lagi
     this.s = {
       t: 0,
       cats: CATS.map((def, i) => ({
         x: this.spawns[i].x - def.w / 2, y: this.spawns[i].y - def.h, w: def.w, h: def.h,
-        vx: 0, vy: 0, face: 1, ground: false, coyote: 0, jbuf: 0, prevJ: false, walk: 0,
+        vx: 0, vy: 0, face: 1, ground: false, coyote: 0, jbuf: 0, prevJ: false, walk: 0, cp: -1,
       })),
-      box: { x: this.boxSpawn.x, y: this.boxSpawn.y, w: TILE, h: TILE, vy: 0 },
-      A: false, B: false, lever: false, bridge: false, gate: false,
-      won: false, wonAt: 0, deaths: 0, splashes: [], splashId: keepId,
+      box: this.boxSpawn ? { x: this.boxSpawn.x, y: this.boxSpawn.y, w: TILE, h: TILE, vy: 0 } : null,
+      lifts: this.liftDefs.map((d) => ({ x: d.x, y: d.restY, w: d.w, h: d.h })),
+      robots: this.robotDefs.map((d) => ({ x: d.x, y: d.y, w: ROBOT_W, h: ROBOT_H, dir: 1, off: false })),
+      on: {}, cpOn: 0,
+      won: false, wonAt: 0, deaths: 0, fx: [], fxId: keepId,
     };
+  }
+
+  // Apakah objek dengan kunci `key` (mis. '~', 'D', 'P0', 'R0', 'Y1') lagi aktif?
+  active(key) {
+    const ids = this.links[key];
+    return !!ids && ids.some((id) => this.s.on[id]);
   }
 
   tile(tx, ty) {
@@ -74,8 +114,8 @@ export class Sim {
   solid(tx, ty) {
     const c = this.tile(tx, ty);
     if (SOLID.has(c)) return true;
-    if (c === '~') return this.s.bridge;
-    if (c === 'D') return !this.s.gate;
+    if (c === '~') return this.active('~');
+    if (GATES.has(c)) return !this.active(c);
     return false;
   }
 
@@ -115,24 +155,43 @@ export class Sim {
     return false;
   }
 
+  // Tabrakan vertikal sama benda padat yang bisa gerak (kardus, lift).
+  // Return 'top' kalau e jadi berdiri di atasnya.
+  landOn(e, r) {
+    if (!overlap(e, r)) return null;
+    if (e.y + e.h - r.y <= r.y + r.h - e.y) { e.y = r.y - e.h; return 'top'; }
+    e.y = r.y + r.h; return 'bottom';
+  }
+
   // Kalau jembatan tiba-tiba muncul pas ada yang lagi "di dalam" tile, dorong ke atas.
   unstick(e) {
     for (let i = 0; i < 3 && this.rectSolid(e); i++) e.y = Math.floor((e.y + e.h - 0.001) / TILE) * TILE - e.h;
   }
 
   inWater(e) {
-    if (this.s.bridge) return false;
     const bottom = e.y + e.h;
     const ty = Math.floor((bottom - 1) / TILE);
     const x0 = Math.floor((e.x + 2) / TILE), x1 = Math.floor((e.x + e.w - 2) / TILE);
-    for (let tx = x0; tx <= x1; tx++) if (this.tile(tx, ty) === '~' && bottom > ty * TILE + 6) return true;
+    for (let tx = x0; tx <= x1; tx++) {
+      const c = this.tile(tx, ty);
+      if ((c === 'w' || (c === '~' && !this.active('~'))) && bottom > ty * TILE + 6) return true;
+    }
     return false;
   }
 
-  splash(x, y) {
+  effect(kind, x, y) {
     const s = this.s;
-    s.splashes.push({ id: ++s.splashId, x: Math.round(x), y: Math.round(y) });
-    if (s.splashes.length > 6) s.splashes.shift();
+    s.fx.push({ id: ++s.fxId, k: kind, x: Math.round(x), y: Math.round(y) });
+    if (s.fx.length > 8) s.fx.shift();
+  }
+
+  respawn(i) {
+    const s = this.s, e = s.cats[i];
+    s.deaths++;
+    const sp = e.cp >= 0
+      ? { x: this.checkpoints[e.cp].x + TILE / 2, y: this.checkpoints[e.cp].y + TILE }
+      : this.spawns[i];
+    Object.assign(e, { x: sp.x - e.w / 2, y: sp.y - e.h, vx: 0, vy: 0, ground: false });
   }
 
   // inputs: [{l,r,j}, {l,r,j}] — index 0 = Gembul, 1 = Mochi
@@ -140,24 +199,58 @@ export class Sim {
     const s = this.s;
     s.t += dt;
     const box = s.box;
+    const bodies = box ? [...s.cats, box] : [...s.cats];
 
-    // --- tombol, tuas, jembatan, pagar ---
-    const anyOn = (sensors, who) => sensors.some((r) => who.some((e) => overlap(e, r)));
-    s.A = anyOn(this.btnA, [...s.cats, box]);
-    s.B = anyOn(this.btnB, [s.cats[0], box]); // tombol berat: cuma Gembul atau kardus
-    if (!s.lever && this.levers.some((r) => s.cats.some((e) => overlap(e, r)))) s.lever = true;
-    const wasBridge = s.bridge;
-    s.bridge = s.A || s.B;
-    s.gate = s.lever;
-    if (s.bridge && !wasBridge) { s.cats.forEach((e) => this.unstick(e)); this.unstick(box); }
+    // --- tombol & tuas ---
+    const wasBridge = this.active('~');
+    for (const id of this.triggerIds) if (!LEVERS.has(id)) s.on[id] = false;
+    for (const r of this.sensors) {
+      const who = r.heavy ? [s.cats[0], box] : bodies; // tombol berat: cuma Gembul atau kardus
+      if (who.some((e) => e && overlap(e, r))) s.on[r.id] = true;
+    }
+    for (const r of this.levers) if (!s.on[r.id] && s.cats.some((e) => overlap(e, r))) s.on[r.id] = true;
+    if (this.active('~') && !wasBridge) bodies.forEach((e) => this.unstick(e));
+
+    // --- lift: naik kalau tombolnya aktif, turun kalau nggak ---
+    s.lifts.forEach((L, i) => {
+      const d = this.liftDefs[i];
+      const target = this.active('P' + i) ? d.topY : d.restY;
+      let dy = Math.max(-LIFT_SPEED * dt, Math.min(LIFT_SPEED * dt, target - L.y));
+      if (!dy) return;
+      const riders = bodies.filter((e) => Math.abs(e.y + e.h - L.y) < 2 && e.x < L.x + L.w && e.x + e.w > L.x);
+      if (dy > 0) { // turun: jangan gencet yang ada di bawah
+        const below = { x: L.x, y: L.y + L.h, w: L.w, h: dy };
+        if (bodies.some((e) => !riders.includes(e) && overlap(e, below))) dy = 0;
+      }
+      L.y += dy;
+      for (const e of riders) { e.y = L.y - e.h; if (dy < 0 && this.rectSolid(e)) { e.y -= dy; } }
+    });
 
     // --- kardus: gravitasi ---
-    box.vy = Math.min(box.vy + GRAV * dt, MAX_FALL);
-    if (this.moveY(box, box.vy * dt)) box.vy = 0;
-    if (this.inWater(box)) {
-      this.splash(box.x + box.w / 2, Math.floor((box.y + box.h) / TILE) * TILE);
-      Object.assign(box, { x: this.boxSpawn.x, y: this.boxSpawn.y, vy: 0 });
+    if (box) {
+      box.vy = Math.min(box.vy + GRAV * dt, MAX_FALL);
+      const dy = box.vy * dt;
+      if (this.moveY(box, dy)) box.vy = 0;
+      for (const L of s.lifts) if (this.landOn(box, L)) box.vy = 0;
+      if (this.inWater(box)) {
+        this.effect('water', box.x + box.w / 2, Math.floor((box.y + box.h) / TILE) * TILE);
+        Object.assign(box, { x: this.boxSpawn.x, y: this.boxSpawn.y, vy: 0 });
+      }
     }
+
+    // --- robot vacuum ---
+    s.robots.forEach((R, i) => {
+      const d = this.robotDefs[i];
+      R.off = this.active('R' + i);
+      if (R.off) { // pulang ke dok
+        const dx = Math.max(-ROBOT_SPEED * dt, Math.min(ROBOT_SPEED * dt, d.dock - R.x));
+        R.x += dx; if (dx) R.dir = Math.sign(dx);
+        return;
+      }
+      R.x += R.dir * ROBOT_SPEED * dt;
+      const bounce = R.x < d.minX || R.x + R.w > d.maxX || this.rectSolid(R) || (box && overlap(R, box));
+      if (bounce) { R.x -= R.dir * ROBOT_SPEED * dt; R.dir *= -1; }
+    });
 
     // --- kucing ---
     s.cats.forEach((e, i) => {
@@ -173,24 +266,24 @@ export class Sim {
       if (!inp.j && e.vy < -220) e.vy = -220; // lepas tombol lompat = lompatan pendek
 
       // nempel ke kardus? jalan lebih pelan (lagi ngedorong)
-      const touching = dir && e.y < box.y + box.h && e.y + e.h > box.y &&
+      const touching = box && dir && e.y < box.y + box.h && e.y + e.h > box.y &&
         (dir > 0 ? Math.abs(e.x + e.w - box.x) < 1.5 : Math.abs(e.x - (box.x + box.w)) < 1.5);
       e.vx = dir * def.speed * (touching && def.push ? PUSH_SLOW : 1);
 
       // horizontal
       const dx = e.vx * dt;
       this.moveX(e, dx);
-      if (overlap(e, box)) {
+      if (box && overlap(e, box)) {
         if (def.push && dx) {
           const want = dx > 0 ? e.x + e.w - box.x : e.x - (box.x + box.w);
           const old = box.x;
           this.moveX(box, want);
-          // kardus jangan nembus kucing satunya
-          const other = s.cats[1 - i];
-          if (overlap(box, other) && other.y + other.h > box.y + 4) box.x = old;
+          const other = s.cats[1 - i]; // kardus jangan nembus kucing satunya / lift / robot
+          if ((overlap(box, other) && other.y + other.h > box.y + 4) || s.lifts.some((L) => overlap(box, L)) || s.robots.some((R) => !R.off && overlap(box, R))) box.x = old;
         }
         if (overlap(e, box)) e.x = dx > 0 ? box.x - e.w : box.x + box.w;
       }
+      for (const L of s.lifts) if (overlap(e, L) && dx) e.x = dx > 0 ? L.x - e.w : L.x + L.w;
 
       // vertikal
       e.vy = Math.min(e.vy + GRAV * dt, MAX_FALL);
@@ -198,23 +291,28 @@ export class Sim {
       const hit = this.moveY(e, dy);
       e.ground = hit && dy > 0;
       if (hit) e.vy = 0;
-      if (overlap(e, box)) {
-        if (dy > 0) { e.y = box.y - e.h; e.ground = true; } else e.y = box.y + box.h;
-        e.vy = 0;
+      for (const r of box ? [box, ...s.lifts] : s.lifts) {
+        const side = this.landOn(e, r);
+        if (side === 'top') { e.ground = true; if (e.vy > 0) e.vy = 0; }
+        else if (side === 'bottom') e.vy = Math.max(e.vy, 0);
       }
       if (e.ground && dir) e.walk += Math.abs(dx); else if (e.ground) e.walk = 0;
 
-      // kecebur
+      // checkpoint (kasur kucing)
+      this.checkpoints.forEach((c, k) => { if (overlap(e, c)) { e.cp = k; s.cpOn |= 1 << k; } });
+
+      // bahaya
       if (this.inWater(e)) {
-        this.splash(e.x + e.w / 2, Math.floor((e.y + e.h) / TILE) * TILE);
-        s.deaths++;
-        const sp = this.spawns[i];
-        Object.assign(e, { x: sp.x - e.w / 2, y: sp.y - e.h, vx: 0, vy: 0, ground: false });
+        this.effect('water', e.x + e.w / 2, Math.floor((e.y + e.h) / TILE) * TILE);
+        this.respawn(i);
+      } else if (s.robots.some((R) => !R.off && overlap(e, { x: R.x + 8, y: R.y + 3, w: R.w - 16, h: R.h - 3 }))) {
+        this.effect('zap', e.x + e.w / 2, e.y + e.h / 2);
+        this.respawn(i);
       }
     });
 
     // --- menang: dua-duanya di area ikan ---
-    if (!s.won) {
+    if (!s.won && this.goal) {
       const g = this.goal;
       const inGoal = (e) => {
         const cx = e.x + e.w / 2, by = e.y + e.h;
@@ -228,35 +326,46 @@ export class Sim {
   snapshot() {
     const s = this.s, r = (v) => Math.round(v * 10) / 10;
     return {
+      lv: this.index,
       tm: r(s.t),
       c: s.cats.map((e) => [r(e.x), r(e.y), r(e.vx), r(e.vy), e.face, e.ground ? 1 : 0, Math.round(e.walk)]),
-      b: [r(s.box.x), r(s.box.y)],
-      f: (s.A ? 1 : 0) | (s.B ? 2 : 0) | (s.lever ? 4 : 0) | (s.bridge ? 8 : 0) | (s.gate ? 16 : 0) | (s.won ? 32 : 0),
-      w: r(s.wonAt), d: s.deaths, sp: s.splashes,
+      b: s.box ? [r(s.box.x), r(s.box.y)] : null,
+      l: s.lifts.map((L) => r(L.y)),
+      ro: s.robots.map((R) => [r(R.x), R.dir, R.off ? 1 : 0]),
+      on: this.triggerIds.filter((id) => s.on[id]).join(''),
+      cp: s.cpOn,
+      won: s.won ? 1 : 0, w: r(s.wonAt), d: s.deaths, fx: s.fx,
     };
   }
 
   // Dipakai guest: timpa state lokal dengan snapshot dari host
   applySnapshot(n) {
     const s = this.s;
+    const target = (e, x, y) => {
+      e.tx = x; e.ty = y;
+      if (!e.seen || Math.hypot(x - e.x, y - e.y) > 96) { e.x = x; e.y = y; }
+      e.seen = true;
+    };
     s.t = n.tm;
     n.c.forEach((a, i) => {
       const e = s.cats[i];
-      [e.tx, e.ty, e.vx, e.vy, e.face] = a;
+      target(e, a[0], a[1]);
+      [, , e.vx, e.vy, e.face] = a;
       e.ground = !!a[5]; e.walk = a[6];
-      if (e.tx2 === undefined || Math.hypot(e.tx - e.x, e.ty - e.y) > 96) { e.x = e.tx; e.y = e.ty; }
-      e.tx2 = true;
     });
-    s.box.tx = n.b[0]; s.box.ty = n.b[1];
-    if (Math.hypot(s.box.tx - s.box.x, s.box.ty - s.box.y) > 96) { s.box.x = s.box.tx; s.box.y = s.box.ty; }
-    s.A = !!(n.f & 1); s.B = !!(n.f & 2); s.lever = !!(n.f & 4); s.bridge = !!(n.f & 8); s.gate = !!(n.f & 16); s.won = !!(n.f & 32);
-    s.wonAt = n.w; s.deaths = n.d; s.splashes = n.sp;
+    if (s.box && n.b) target(s.box, n.b[0], n.b[1]);
+    n.l?.forEach((y, i) => target(s.lifts[i], s.lifts[i].x, y));
+    n.ro?.forEach((a, i) => { target(s.robots[i], a[0], s.robots[i].y); s.robots[i].dir = a[1]; s.robots[i].off = !!a[2]; });
+    s.on = {};
+    for (const id of n.on || '') s.on[id] = true;
+    s.cpOn = n.cp; s.won = !!n.won; s.wonAt = n.w; s.deaths = n.d; s.fx = n.fx;
   }
 
   // Guest: geser posisi tampilan pelan-pelan ke posisi dari host biar halus
   smooth(dt) {
     const k = Math.min(1, 1 - Math.pow(0.000001, dt)); // ±20% jarak per frame di 60fps
-    for (const e of [...this.s.cats, this.s.box]) {
+    const s = this.s;
+    for (const e of [...s.cats, ...(s.box ? [s.box] : []), ...s.lifts, ...s.robots]) {
       if (e.tx === undefined) continue;
       e.x += (e.tx - e.x) * k;
       e.y += (e.ty - e.y) * k;
