@@ -6,6 +6,8 @@ import { Renderer } from './render.js';
 import { Net } from './net.js';
 
 const $ = (id) => document.getElementById(id);
+// Naikin angka ini tiap format pesan/snapshot berubah. Dua pemain harus pakai versi yang sama.
+const PROTOCOL = 2;
 const STEP = 1 / 60;          // simulasi 60x per detik
 const SNAP_EVERY = 1 / 30;    // host kirim snapshot 30x per detik
 const INPUT_KEEPALIVE = 0.15; // guest kirim ulang input tiap 150ms walau nggak berubah
@@ -185,6 +187,12 @@ function setupNet() {
   return net;
 }
 
+// Salah satu pemain masih pakai versi lama (biasanya karena cache browser habis update)
+function versionMismatch() {
+  stopGame();
+  message('Versi game kalian beda', 'Salah satu masih kebuka versi lama. Refresh paksa di dua-duanya (Mac: Cmd+Shift+R, Windows: Ctrl+Shift+R), terus bikin room baru.');
+}
+
 // Minta izin mic SEBELUM konek. Selain buat voice chat, izin mic bikin Chrome pakai IP lokal asli
 // (bukan nama *.local), jadi dua device di WiFi yang sama bisa saling nemu.
 let micNote = '';
@@ -202,7 +210,10 @@ async function hostRoom() {
   await prepareMic();
   net.on('connected', () => startGame('host'));
   // guest bilang "aku udah siap" → host kasih tahu dia jadi kucing yang mana
-  net.on('join', () => net.send({ t: 'hello', yourCat: 1 - myCat, lv: levelIndex }));
+  net.on('join', (m) => {
+    net.send({ t: 'hello', yourCat: 1 - myCat, lv: levelIndex, v: PROTOCOL });
+    if (m.v !== PROTOCOL) versionMismatch();
+  });
   net.on('goto', (m) => loadLevel(m.lv));
   net.on('in', (m) => { remoteInput = { l: !!m.l, r: !!m.r, j: !!m.j }; });
   net.on('restart', () => { sim?.reset(); acc = 0; });
@@ -225,7 +236,11 @@ async function joinRoom(code) {
   $('lobbyErr').textContent = 'Nyambungin…';
   setupNet();
   await prepareMic();
-  net.on('hello', (m) => { myCat = m.yourCat; startGame('guest', m.lv || 0); });
+  net.on('hello', (m) => {
+    myCat = m.yourCat;
+    startGame('guest', m.lv || 0);
+    if (m.v !== PROTOCOL) versionMismatch();
+  });
   net.on('st', (m) => {
     if (!sim) return;
     if (m.lv !== levelIndex) loadLevel(m.lv); // host pindah level
@@ -235,7 +250,7 @@ async function joinRoom(code) {
   net.on('pong', (m) => { pingMs = Math.round(performance.now() - m.ts); });
   try {
     await net.join(code);
-    net.send({ t: 'join' });
+    net.send({ t: 'join', v: PROTOCOL });
     $('lobbyErr').textContent = '';
     clearInterval(pingTimer);
     pingTimer = setInterval(() => net?.connected && net.send({ t: 'ping', ts: performance.now() }), 2000);
