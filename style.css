@@ -1,0 +1,61 @@
+* { box-sizing: border-box; }
+:root {
+  --bg: #2a1f1a; --panel: #3a2b23; --ink: #fbefdc; --muted: #c9b39a;
+  --accent: #f0a04b; --accent-dark: #c8702a; --line: #5a4334; --err: #ff8a7a;
+}
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: 'Pixelify Sans', ui-monospace, monospace; }
+body { display: flex; justify-content: center; align-items: center; min-height: 100dvh; padding: 12px; }
+button { font: inherit; color: var(--ink); background: var(--panel); border: 2px solid var(--line); padding: 10px 16px; cursor: pointer; border-radius: 4px; box-shadow: 0 3px 0 var(--line); }
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--line); }
+button.primary { background: var(--accent); color: #2a1a10; border-color: var(--accent-dark); box-shadow: 0 3px 0 var(--accent-dark); font-weight: 600; }
+button.ghost { background: transparent; }
+button.small { padding: 4px 10px; font-size: 14px; }
+button:disabled { opacity: .5; cursor: wait; }
+
+.screen { display: none; width: 100%; max-width: 1180px; flex-direction: column; align-items: center; text-align: center; }
+.screen.active { display: flex; }
+h1 { font-size: clamp(40px, 8vw, 72px); margin: 0; color: var(--accent); letter-spacing: 2px; text-shadow: 4px 4px 0 #6b3a14; }
+h2 { margin: 0 0 8px; color: var(--accent); }
+.sub { color: var(--muted); margin: 8px 0 20px; }
+.hint { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+.err { color: var(--err); min-height: 1.2em; }
+
+.cats { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+.cat-card { width: 230px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px; text-align: center; }
+.cat-card canvas { image-rendering: pixelated; width: 96px; height: 72px; }
+.cat-card b { font-size: 20px; }
+.cat-card span { font-size: 13px; color: var(--muted); line-height: 1.35; }
+.cat-card.selected { border-color: var(--accent); box-shadow: 0 3px 0 var(--accent-dark); background: #4a3528; }
+
+.actions { display: flex; flex-direction: column; gap: 12px; align-items: center; margin-top: 22px; }
+.actions.row { flex-direction: row; }
+.join { display: flex; gap: 8px; }
+.join input { font: inherit; font-size: 22px; width: 110px; text-align: center; letter-spacing: 6px; text-transform: uppercase; background: #1d1511; color: var(--ink); border: 2px solid var(--line); border-radius: 4px; padding: 6px; }
+.code { font-size: clamp(56px, 14vw, 110px); letter-spacing: 14px; color: var(--accent); text-shadow: 5px 5px 0 #6b3a14; }
+.waiting-dots { color: var(--muted); margin-top: 26px; }
+.waiting-dots span { animation: blink 1.2s infinite; }
+.waiting-dots span:nth-child(2) { animation-delay: .2s; } .waiting-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 100% { opacity: .2; } 50% { opacity: 1; } }
+
+#game { max-width: 1400px; }
+.hud { width: 100%; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 6px 2px 10px; font-size: 15px; }
+.hud .spacer { flex: 1; }
+#hudRoom { color: var(--accent); }
+.stage { position: relative; width: min(100%, calc((100dvh - 150px) * 36 / 17)); }
+#cv { display: block; width: 100%; height: auto; image-rendering: pixelated; border: 3px solid var(--line); border-radius: 4px; background: #000; }
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20, 12, 8, .55); }
+.overlay.hidden { display: none; }
+.panel { background: var(--panel); border: 3px solid var(--line); padding: 22px 30px; border-radius: 6px; min-width: 280px; }
+.controls { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+
+.touch { display: none; width: 100%; justify-content: space-between; margin-top: 12px; user-select: none; -webkit-user-select: none; }
+.touch button { font-size: 26px; width: 76px; height: 64px; margin-right: 8px; touch-action: none; }
+.touch .jump { width: 140px; font-size: 18px; margin: 0; }
+@media (pointer: coarse) {
+  .touch { display: flex; }
+  .controls { display: none; }
+  body { padding: 6px; }
+  .hud { font-size: 13px; gap: 8px; padding: 2px 0 6px; }
+  .stage { width: min(100%, calc((100dvh - 130px) * 36 / 17)); }
+  .touch { margin-top: 6px; }
+}

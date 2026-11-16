@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Kucing Maling</title>
+  <meta name="description" content="Game co-op online berdua: dua kucing kerja sama nyolong ikan." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+  <!-- LOBBY -->
+  <section id="lobby" class="screen active">
+    <h1>Kucing Maling</h1>
+    <p class="sub">Dua kucing, satu ikan, nol rasa bersalah. Main berdua online.</p>
+
+    <div class="cats">
+      <button class="cat-card selected" data-cat="0">
+        <canvas width="96" height="72" data-preview="0"></canvas>
+        <b>Gembul</b>
+        <span>Gede &amp; kuat. Bisa nekan tombol berat dan dorong kardus. Lompatnya pendek.</span>
+      </button>
+      <button class="cat-card" data-cat="1">
+        <canvas width="96" height="72" data-preview="1"></canvas>
+        <b>Mochi</b>
+        <span>Kecil &amp; lincah. Muat lewat celah sempit dan lompat tinggi. Terlalu ringan buat tombol berat.</span>
+      </button>
+    </div>
+    <p class="hint">Pilih kucingmu (buat yang bikin room). Pasanganmu otomatis dapat yang satunya.</p>
+
+    <div class="actions">
+      <button id="btnHost" class="primary">Buat room</button>
+      <div class="join">
+        <input id="joinCode" maxlength="4" placeholder="KODE" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+        <button id="btnJoin">Gabung</button>
+      </div>
+      <button id="btnLocal" class="ghost">Main lokal (1 keyboard)</button>
+    </div>
+    <p id="lobbyErr" class="err"></p>
+  </section>
+
+  <!-- NUNGGU PASANGAN -->
+  <section id="waiting" class="screen">
+    <p class="sub">Kode room kamu</p>
+    <div id="roomCode" class="code">····</div>
+    <p class="hint">Kasih kode ini ke pasanganmu, atau kirim link-nya.</p>
+    <div class="actions row">
+      <button id="btnCopyLink" class="primary">Salin link</button>
+      <button id="btnCancel" class="ghost">Batal</button>
+    </div>
+    <p class="waiting-dots">Nungguin pasangan<span>.</span><span>.</span><span>.</span></p>
+  </section>
+
+  <!-- GAME -->
+  <section id="game" class="screen">
+    <header class="hud">
+      <span id="hudLevel"></span>
+      <span id="hudTime">00:00</span>
+      <span id="hudDeaths">kecebur: 0</span>
+      <span id="hudRoom"></span>
+      <span class="spacer"></span>
+      <button id="btnMic" class="small">Mic: mati</button>
+      <button id="btnRestart" class="small" title="R">Ulang</button>
+      <button id="btnLeave" class="small ghost">Keluar</button>
+    </header>
+    <div class="stage">
+      <canvas id="cv"></canvas>
+      <div id="winBox" class="overlay hidden">
+        <div class="panel">
+          <h2>Ikan berhasil dicuri!</h2>
+          <p id="winStats"></p>
+          <button id="btnAgain" class="primary">Main lagi</button>
+        </div>
+      </div>
+      <div id="msgBox" class="overlay hidden">
+        <div class="panel">
+          <h2 id="msgTitle"></h2>
+          <p id="msgText"></p>
+          <button id="msgBtn" class="primary">Balik ke lobby</button>
+        </div>
+      </div>
+    </div>
+    <p id="controlsHelp" class="controls"></p>
+    <div id="touch" class="touch">
+      <div><button data-k="l" aria-label="Kiri">◀</button><button data-k="r" aria-label="Kanan">▶</button></div>
+      <button data-k="j" class="jump">LOMPAT</button>
+    </div>
+  </section>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
